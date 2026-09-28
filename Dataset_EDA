@@ -7,20 +7,19 @@ from IPython.display import display
 
 df = pd.read_csv("/Users/kolhozan19/Downloads/master.csv")
 
-#пропуски в ичр заполняем средним по стране значением
-
+#пропуски в ичр заполняем средним по стране
 df["HDI for year"] = pd.to_numeric(df["HDI for year"], errors="coerce")
 mean_by_country = df.groupby("country")["HDI for year"].transform("mean")
 df["HDI for year"] = df["HDI for year"].fillna(mean_by_country)
 
 df.to_csv("data_filled.csv", index=False)
 
-#нумеруем возрастные группы 0-5
+# нумеруем возрастные группы 0-5
 
 lower = (
     df["age"].astype(str)
       .str.extract(r"(\d+)")[0]
-      .astype(float)
+      .astype(int)
 )
 
 conditions = [
@@ -96,7 +95,7 @@ sns.regplot(
     ax=axes[0],
 )
 axes[0].set_xscale("log")
-axes[0].set_title("Суициды на 100k vs ВВП на душу")
+axes[0].set_title("Суициды на 100k от ВВП на душу")
 axes[0].set_xlabel("gdp_per_capita ($), лог-шкала")
 axes[0].set_ylabel("suicides/100k pop")
 
@@ -109,7 +108,7 @@ sns.regplot(
     line_kws={"color": "red"},
     ax=axes[1],
 )
-axes[1].set_title("Суициды на 100k vs HDI")
+axes[1].set_title("Суициды на 100k от HDI")
 axes[1].set_xlabel("HDI for year")
 axes[1].set_ylabel("suicides/100k pop")
 
@@ -138,10 +137,7 @@ desc["std"] = df[num_cols].std()
 desc["range"] = df[num_cols].max() - df[num_cols].min()
 desc["IQR"] = df[num_cols].quantile(0.75) - df[num_cols].quantile(0.25)
 desc["CV_%"] = (desc["std"] / desc["mean"]) * 100
-desc["missing"] = df[num_cols].isna().sum()
-desc["missing_%"] = (df[num_cols].isna().mean() * 100)
 desc["unique"] = df[num_cols].nunique()
-
 print("описательные статистики")
 display(desc.round(3).to_string())
 
