@@ -1,0 +1,104 @@
+import numpy as np
+import seaborn as sns
+import pandas as pd
+import matplotlib.pyplot as plt
+
+df = pd.read_csv("/Users/kolhozan19/Downloads/master.csv")
+
+#пропуски в ичр заполняем средним по стране значением
+
+df["HDI for year"] = pd.to_numeric(df["HDI for year"], errors="coerce")
+mean_by_country = df.groupby("country")["HDI for year"].transform("mean")
+df["HDI for year"] = df["HDI for year"].fillna(mean_by_country)
+
+df.to_csv("data_filled.csv", index=False)
+
+#нумеруем возрастные группы 0-5
+
+lower = (
+    df["age"].astype(str)
+      .str.extract(r"(\d+)")[0]
+      .astype(float)
+)
+
+conditions = [
+    lower.between(5,14),
+    lower.between(15, 24),
+    lower.between(25, 34),
+    lower.between(35, 54),
+    lower.between(55, 74),
+    lower >= 75,
+]
+
+choices = [0, 1, 2, 3, 4, 5]
+
+df["age-category"] = np.select(conditions, choices, default=np.nan).astype("int")
+
+#страна_год не нужна
+
+df = df.drop(columns=["country-year"])
+
+#хитмапа корелляций
+
+# берём только числовые столбцы
+numeric_df = df.select_dtypes(include=[np.number])
+
+# матрица корреляций
+corr = numeric_df.corr()
+
+# рисуем
+plt.figure(figsize=(12, 10))
+sns.heatmap(
+    corr,
+    annot=True,
+    fmt=".2f",
+    cmap="coolwarm",
+    center=0,
+    vmin=-1, vmax=1,
+    square=True,
+    linewidths=0.5,
+    cbar_kws={"shrink": 0.8}
+)
+plt.title("Корреляционная матрица")
+plt.tight_layout()
+plt.show()
+
+shares = (
+    df.groupby(["sex", "age-category"])["suicides_no"].sum()
+      .groupby(level=0)               # группируем внутри пола
+      .apply(lambda x: x / x.sum() * 100)
+      .unstack()
+)
+print(shares.round(2))
+
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+sns.regplot(
+    data=df,
+    x="gdp_per_capita ($)",
+    y="suicides/100k pop",
+    lowess=True,
+    scatter_kws={"alpha": 0.2, "s": 8},
+    line_kws={"color": "red"},
+    ax=axes[0],
+)
+axes[0].set_xscale("log")
+axes[0].set_title("Суициды на 100k vs ВВП на душу")
+axes[0].set_xlabel("gdp_per_capita ($), лог-шкала")
+axes[0].set_ylabel("suicides/100k pop")
+
+sns.regplot(
+    data=df,
+    x="HDI for year",
+    y="suicides/100k pop",
+    lowess=True,
+    scatter_kws={"alpha": 0.2, "s": 8},
+    line_kws={"color": "red"},
+    ax=axes[1],
+)
+axes[1].set_title("Суициды на 100k vs HDI")
+axes[1].set_xlabel("HDI for year")
+axes[1].set_ylabel("suicides/100k pop")
+
+plt.tight_layout()
+plt.show()
