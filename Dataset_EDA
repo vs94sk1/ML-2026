@@ -149,3 +149,211 @@ quantiles.columns = [f"q{int(c*100)}" for c in quantiles.columns]
 print("\nквантили")
 display(quantiles.round(3).to_string())
 
+import numpy as np
+import seaborn as sns
+import pandas as pd
+from scipy import stats
+import matplotlib.pyplot as plt
+from IPython.display import display
+
+df = pd.read_csv("/Users/kolhozan19/Downloads/master.csv")
+
+#пропуски в ичр заполняем средним по стране
+df["HDI for year"] = pd.to_numeric(df["HDI for year"], errors="coerce")
+mean_by_country = df.groupby("country")["HDI for year"].transform("mean")
+df["HDI for year"] = df["HDI for year"].fillna(mean_by_country)
+
+df.to_csv("data_filled.csv", index=False)
+
+# нумеруем возрастные группы 0-5
+
+lower = (
+    df["age"].astype(str)
+      .str.extract(r"(\d+)")[0]
+      .astype(int)
+)
+
+conditions = [
+    lower.between(5,14),
+    lower.between(15, 24),
+    lower.between(25, 34),
+    lower.between(35, 54),
+    lower.between(55, 74),
+    lower >= 75,
+]
+
+choices = [0, 1, 2, 3, 4, 5]
+
+df["age-category"] = np.select(conditions, choices, default=np.nan).astype("int")
+
+#страна_год не нужна
+
+df = df.drop(columns=["country-year"])
+df.columns = df.columns.str.strip()
+
+df["gdp_for_year ($)"] = (
+    df["gdp_for_year ($)"]
+      .astype(str)
+      .str.replace(",", "", regex=False)
+      .str.strip()
+)
+
+df["gdp_for_year ($)"] = pd.to_numeric(df["gdp_for_year ($)"], errors="coerce")
+df["gdp_for_year ($)"] = df["gdp_for_year ($)"].fillna(0).astype("int64")
+
+#хитмапа корелляций
+
+
+numeric_df = df.select_dtypes(include=[np.number])
+
+# матрица корреляций
+corr = numeric_df.corr()
+
+
+plt.figure(figsize=(12, 10))
+sns.heatmap(
+    corr,
+    annot=True,
+    fmt=".2f",
+    cmap="coolwarm",
+    center=0,
+    vmin=-1, vmax=1,
+    square=True,
+    linewidths=0.5,
+    cbar_kws={"shrink": 0.8}
+)
+plt.title("Корреляционная матрица")
+plt.tight_layout()
+plt.show()
+
+shares = (
+    df.groupby(["sex", "age-category"])["suicides_no"].sum()
+      .groupby(level=0)               # группируем внутри пола
+      .apply(lambda x: x / x.sum() * 100)
+      .unstack()
+)
+print(shares.round(2))
+
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+sns.regplot(
+    data=df,
+    x="gdp_per_capita ($)",
+    y="suicides/100k pop",
+    lowess=True,
+    scatter_kws={"alpha": 0.2, "s": 8},
+    line_kws={"color": "red"},
+    ax=axes[0],
+)
+axes[0].set_xscale("log")
+axes[0].set_title("Суициды на 100k от ВВП на душу")
+axes[0].set_xlabel("gdp_per_capita ($), лог-шкала")
+axes[0].set_ylabel("suicides/100k pop")
+
+sns.regplot(
+    data=df,
+    x="HDI for year",
+    y="suicides/100k pop",
+    lowess=True,
+    scatter_kws={"alpha": 0.2, "s": 8},
+    line_kws={"color": "red"},
+    ax=axes[1],
+)
+axes[1].set_title("Суициды на 100k от HDI")
+axes[1].set_xlabel("HDI for year")
+axes[1].set_ylabel("suicides/100k pop")
+
+plt.tight_layout()
+plt.show()
+
+num_cols = [
+    "suicides_no",
+    "population",
+    "suicides/100k pop",
+    "HDI for year",
+    "gdp_for_year ($)",
+    "gdp_per_capita ($)"
+    ,
+]
+
+
+df[num_cols] = df[num_cols].apply(pd.to_numeric, errors="coerce")
+
+#описательные статистики
+desc = df[num_cols].describe().T
+desc["median"] = df[num_cols].median()
+desc["mode"] = df[num_cols].mode().iloc[0]
+desc["variance"] = df[num_cols].var()
+desc["std"] = df[num_cols].std()
+desc["range"] = df[num_cols].max() - df[num_cols].min()
+desc["IQR"] = df[num_cols].quantile(0.75) - df[num_cols].quantile(0.25)
+desc["CV_%"] = (desc["std"] / desc["mean"]) * 100
+desc["unique"] = df[num_cols].nunique()
+print("описательные статистики")
+display(desc.round(3).to_string())
+
+#квантили
+quantiles = df[num_cols].quantile(
+    [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99]
+).T
+quantiles.columns = [f"q{int(c*100)}" for c in quantiles.columns]
+print("\nквантили")
+display(quantiles.round(3).to_string())
+
+
+print()
+print("ПРОВЕРКА ГИПОТЕЗЫ О РАЗЛИЧИИ СУИЦИДОВ ПО ПОЛУ")
+
+
+
+male_data = df[df['sex'] == 'male']['suicides/100k pop'].dropna()
+female_data = df[df['sex'] == 'female']['suicides/100k pop'].dropna()
+
+print(f"\nРазмер выборки (мужчины): {len(male_data)}")
+print(f"Размер выборки (женщины): {len(female_data)}")
+print(f"Среднее (мужчины): {male_data.mean():.2f}")
+print(f"Среднее (женщины): {female_data.mean():.2f}")
+print(f"Медиана (мужчины): {male_data.median():.2f}")
+print(f"Медиана (женщины): {female_data.median():.2f}")
+
+
+t_stat, p_value_t = stats.ttest_ind(male_data, female_data, equal_var=False)
+print(f"\nT-тест Уэлча")
+print(f"t-статистика: {t_stat:.4f}")
+print(f"p-value: {p_value_t:.4e}")
+
+
+u_stat, p_value_u = stats.mannwhitneyu(male_data, female_data, alternative='two-sided')
+print(f"\nU-критерий Манна-Уитни")
+print(f"U-статистика: {u_stat:.4f}")
+print(f"p-value: {p_value_u:.4e}")
+
+
+alpha = 0.05
+print(f"\n--- Вывод (уровень значимости α = {alpha}) ---")
+if p_value_t < alpha:
+    print("Отвергаем H0 (t-тест): Различия статистически значимы.")
+else:
+    print("Не отвергаем H0 (t-тест): Различия не значимы.")
+
+if p_value_u < alpha:
+    print("Отвергаем H0 (U-тест): Различия статистически значимы.")
+else:
+    print("Не отвергаем H0 (U-тест): Различия не значимы.")
+
+plt.figure(figsize=(10, 6))
+sns.boxplot(data=df, x='sex', y='suicides/100k pop', palette='Set2')
+plt.title('Распределение суицидов на 100k по полу')
+plt.ylabel('suicides/100k pop')
+plt.xlabel('Пол')
+plt.grid(axis='y', alpha=0.3)
+plt.show()
+
+plt.figure(figsize=(8, 5))
+sns.barplot(data=df, x='sex', y='suicides/100k pop', ci=95, palette='Set2', capsize=0.1)
+plt.title('Средний уровень суицидов по полу (95% ДИ)')
+plt.ylabel('Среднее suicides/100k pop')
+plt.xlabel('Пол')
+plt.grid(axis='y', alpha=0.3)
+plt.show()
+
